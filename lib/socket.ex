@@ -1,5 +1,6 @@
 defmodule Kadabra.Socket do
   @moduledoc false
+  require Logger
 
   defstruct socket: nil, buffer: "", active_user: nil
 
@@ -190,6 +191,23 @@ defmodule Kadabra.Socket do
 
   def handle_info({:ssl_closed, _socket}, state) do
     Kernel.send(state.active_user, {:closed, self()})
+    {:noreply, %{state | socket: nil}}
+  end
+
+  def handle_info({:ssl_error, _, {:tls_alert, info}}, state) do
+    Logger.warn("[Kadabra.Socket] ssl error: tls_alert: #{inspect info}")
+    Kernel.send(state.active_user, {:closed, self()})
+    # report errors to anyone willing to listen
+    GenServer.cast(:kadabra_errors, {:ssl_error, {:tls_alert, info}})
+
+    {:noreply, %{state | socket: nil}}
+  end
+
+  def handle_info({:ssl_error, _, info}, state) do
+    Logger.warn("[Kadabra.Socket] ssl error: info: #{inspect info}")
+
+    Kernel.send(state.active_user, {:closed, self()})
+    GenServer.cast(:kadabra_errors, {:ssl_error, info})
     {:noreply, %{state | socket: nil}}
   end
 end
